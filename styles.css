@@ -157,6 +157,18 @@ body {
     padding: 60px 0;
 }
 
+/* Slise Ad Unit */
+.slise-ad {
+    width: 270px;
+    height: 90px;
+    margin: 30px auto;
+    display: block;
+}
+
+.slise-ad iframe {
+    display: block;
+}
+
 .info-box {
     display: flex;
     align-items: center;
