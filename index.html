@@ -47,6 +47,18 @@
         </div>
     </section>
 
+    <!-- Video Player Section -->
+    <section class="video-section">
+        <div class="container">
+            <div class="video-player-wrap">
+                <video id="kniplate-player" controls autoplay muted playsinline preload="auto">
+                    <source src="kniplate.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+        </div>
+    </section>
+
     <!-- What is Rug Pull Section -->
     <section class="info-section">
         <div class="container">
@@ -298,6 +310,18 @@
 
 
     
+    <script src="https://cdn.fluidplayer.com/v3/current/fluidplayer.min.js"></script>
+    <script>
+        fluidPlayer('kniplate-player', {
+            layoutControls: {
+                autoPlay: true,
+                mute: true,
+                playButtonShowing: true,
+                fillToContainer: true
+            }
+        });
+    </script>
+
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
