@@ -51,7 +51,7 @@
     <section class="video-section">
         <div class="container">
             <div class="video-player-wrap">
-                <video id="kniplate-player" controls autoplay muted playsinline preload="auto">
+                <video id="kniplate-player" controls muted playsinline preload="auto">
                     <source src="kniplate.mp4" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
@@ -314,20 +314,181 @@
     <script>
         fluidPlayer('kniplate-player', {
             layoutControls: {
-                autoPlay: true,
+                autoPlay: false,
                 mute: true,
                 playButtonShowing: true,
                 fillToContainer: true
-            },
-            vastOptions: {
-                adList: [
-                    {
-                        roll: 'preRoll',
-                        vastTag: 'https://stg-vast.a-ads.com/2434389'
-                    }
-                ]
             }
         });
+
+        // Fluid Player validates VAST media via fetch; AADS media lacks CORS headers, so play it directly.
+        (function() {
+            var vastTagUrl = 'https://stg-vast.a-ads.com/2434389';
+            var contentVideoUrl = 'kniplate.mp4';
+            var video = document.getElementById('kniplate-player');
+
+            if (!video) {
+                return;
+            }
+
+            function textFrom(node) {
+                return node ? node.textContent.trim() : '';
+            }
+
+            function fireTracking(urls) {
+                urls.forEach(function(url) {
+                    if (!url) {
+                        return;
+                    }
+
+                    var pixel = new Image();
+                    pixel.src = url;
+                });
+            }
+
+            function playContent() {
+                video.addEventListener('loadedmetadata', autoplayVideo, { once: true });
+                video.addEventListener('canplay', autoplayVideo, { once: true });
+                video.src = contentVideoUrl;
+                video.load();
+                autoplayVideo();
+            }
+
+            function autoplayVideo() {
+                video.muted = true;
+                video.defaultMuted = true;
+                video.setAttribute('muted', '');
+                video.setAttribute('playsinline', '');
+
+                var playPromise = video.play();
+
+                if (playPromise && typeof playPromise.catch === 'function') {
+                    playPromise.catch(function() {});
+                }
+            }
+
+            function trackError(errorUrl, code) {
+                if (errorUrl) {
+                    fireTracking([errorUrl.replace('[ERRORCODE]', code)]);
+                }
+            }
+
+            function selectMediaFile(mediaFiles) {
+                var mp4Files = mediaFiles.filter(function(file) {
+                    return file.type === 'video/mp4' && file.url;
+                });
+
+                if (!mp4Files.length) {
+                    return null;
+                }
+
+                mp4Files.sort(function(a, b) {
+                    return Math.abs(a.width - 1280) - Math.abs(b.width - 1280);
+                });
+
+                return mp4Files[0].url;
+            }
+
+            fetch(vastTagUrl)
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('VAST request failed');
+                    }
+
+                    return response.text();
+                })
+                .then(function(vastXml) {
+                    var parser = new DOMParser();
+                    var vastDoc = parser.parseFromString(vastXml, 'application/xml');
+                    var linear = vastDoc.querySelector('Linear');
+                    var errorUrl = textFrom(vastDoc.querySelector('Error'));
+
+                    if (!linear) {
+                        trackError(errorUrl, '101');
+                        playContent();
+                        return;
+                    }
+
+                    var mediaFiles = Array.from(linear.querySelectorAll('MediaFile')).map(function(mediaFile) {
+                        return {
+                            type: mediaFile.getAttribute('type'),
+                            width: parseInt(mediaFile.getAttribute('width') || '0', 10),
+                            url: textFrom(mediaFile)
+                        };
+                    });
+                    var adVideoUrl = selectMediaFile(mediaFiles);
+
+                    if (!adVideoUrl) {
+                        trackError(errorUrl, '403');
+                        playContent();
+                        return;
+                    }
+
+                    var impressionUrls = Array.from(vastDoc.querySelectorAll('Impression')).map(textFrom);
+                    var tracking = {};
+                    Array.from(linear.querySelectorAll('Tracking')).forEach(function(node) {
+                        var eventName = node.getAttribute('event');
+                        tracking[eventName] = tracking[eventName] || [];
+                        tracking[eventName].push(textFrom(node));
+                    });
+
+                    var fired = {};
+                    function fireEvent(name) {
+                        if (!fired[name] && tracking[name]) {
+                            fired[name] = true;
+                            fireTracking(tracking[name]);
+                        }
+                    }
+
+                    function onTimeUpdate() {
+                        var duration = video.duration || 0;
+                        var progress = duration ? video.currentTime / duration : 0;
+
+                        fireEvent('start');
+
+                        if (progress >= 0.25) {
+                            fireEvent('firstQuartile');
+                        }
+
+                        if (progress >= 0.5) {
+                            fireEvent('midpoint');
+                        }
+
+                        if (progress >= 0.75) {
+                            fireEvent('thirdQuartile');
+                        }
+                    }
+
+                    function finishAd() {
+                        video.removeEventListener('timeupdate', onTimeUpdate);
+                        video.removeEventListener('ended', finishAd);
+                        video.removeEventListener('error', failAd);
+                        fireEvent('complete');
+                        playContent();
+                    }
+
+                    function failAd() {
+                        video.removeEventListener('timeupdate', onTimeUpdate);
+                        video.removeEventListener('ended', finishAd);
+                        video.removeEventListener('error', failAd);
+                        trackError(errorUrl, '405');
+                        playContent();
+                    }
+
+                    fireTracking(impressionUrls);
+                    video.addEventListener('timeupdate', onTimeUpdate);
+                    video.addEventListener('ended', finishAd);
+                    video.addEventListener('error', failAd);
+                    video.addEventListener('loadedmetadata', autoplayVideo, { once: true });
+                    video.addEventListener('canplay', autoplayVideo, { once: true });
+                    video.src = adVideoUrl;
+                    video.load();
+                    autoplayVideo();
+                })
+                .catch(function() {
+                    playContent();
+                });
+        })();
     </script>
 
     <!-- Footer -->
