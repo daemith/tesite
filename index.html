@@ -321,18 +321,35 @@
             }
         });
 
-        // Fluid Player validates VAST media via fetch; AADS media lacks CORS headers, so play it directly.
+        // AADS media lacks CORS headers, so avoid browser-side VAST/media fetch validation.
         (function() {
-            var vastTagUrl = 'https://stg-vast.a-ads.com/2434389';
+            var adVideoUrl = 'https://static.a-ads.com/a-ads-vast-videos-staging/5/1280x720?region=eu-central-1';
             var contentVideoUrl = 'kniplate.mp4';
+            var impressionUrls = [
+                'https://stg-vast.a-ads.com/2434682/209633/impression?token=631a35f3-11bb-4b93-b26c-d7e87422af63'
+            ];
+            var tracking = {
+                start: [
+                    'https://stg-vast.a-ads.com/2434682/209633/start?token=631a35f3-11bb-4b93-b26c-d7e87422af63'
+                ],
+                firstQuartile: [
+                    'https://stg-vast.a-ads.com/2434682/209633/first_quartile?token=631a35f3-11bb-4b93-b26c-d7e87422af63'
+                ],
+                midpoint: [
+                    'https://stg-vast.a-ads.com/2434682/209633/midpoint?token=631a35f3-11bb-4b93-b26c-d7e87422af63'
+                ],
+                thirdQuartile: [
+                    'https://stg-vast.a-ads.com/2434682/209633/third_quartile?token=631a35f3-11bb-4b93-b26c-d7e87422af63'
+                ],
+                complete: [
+                    'https://stg-vast.a-ads.com/2434682/209633/complete?token=631a35f3-11bb-4b93-b26c-d7e87422af63'
+                ]
+            };
+            var errorUrl = 'https://stg-vast.a-ads.com/2434682/209633/error?token=631a35f3-11bb-4b93-b26c-d7e87422af63vast_error_code=[ERRORCODE]';
             var video = document.getElementById('kniplate-player');
 
             if (!video) {
                 return;
-            }
-
-            function textFrom(node) {
-                return node ? node.textContent.trim() : '';
             }
 
             function fireTracking(urls) {
@@ -373,121 +390,58 @@
                 }
             }
 
-            function selectMediaFile(mediaFiles) {
-                var mp4Files = mediaFiles.filter(function(file) {
-                    return file.type === 'video/mp4' && file.url;
-                });
-
-                if (!mp4Files.length) {
-                    return null;
+            var fired = {};
+            function fireEvent(name) {
+                if (!fired[name] && tracking[name]) {
+                    fired[name] = true;
+                    fireTracking(tracking[name]);
                 }
-
-                mp4Files.sort(function(a, b) {
-                    return Math.abs(a.width - 1280) - Math.abs(b.width - 1280);
-                });
-
-                return mp4Files[0].url;
             }
 
-            fetch(vastTagUrl)
-                .then(function(response) {
-                    if (!response.ok) {
-                        throw new Error('VAST request failed');
-                    }
+            function onTimeUpdate() {
+                var duration = video.duration || 0;
+                var progress = duration ? video.currentTime / duration : 0;
 
-                    return response.text();
-                })
-                .then(function(vastXml) {
-                    var parser = new DOMParser();
-                    var vastDoc = parser.parseFromString(vastXml, 'application/xml');
-                    var linear = vastDoc.querySelector('Linear');
-                    var errorUrl = textFrom(vastDoc.querySelector('Error'));
+                fireEvent('start');
 
-                    if (!linear) {
-                        trackError(errorUrl, '101');
-                        playContent();
-                        return;
-                    }
+                if (progress >= 0.25) {
+                    fireEvent('firstQuartile');
+                }
 
-                    var mediaFiles = Array.from(linear.querySelectorAll('MediaFile')).map(function(mediaFile) {
-                        return {
-                            type: mediaFile.getAttribute('type'),
-                            width: parseInt(mediaFile.getAttribute('width') || '0', 10),
-                            url: textFrom(mediaFile)
-                        };
-                    });
-                    var adVideoUrl = selectMediaFile(mediaFiles);
+                if (progress >= 0.5) {
+                    fireEvent('midpoint');
+                }
 
-                    if (!adVideoUrl) {
-                        trackError(errorUrl, '403');
-                        playContent();
-                        return;
-                    }
+                if (progress >= 0.75) {
+                    fireEvent('thirdQuartile');
+                }
+            }
 
-                    var impressionUrls = Array.from(vastDoc.querySelectorAll('Impression')).map(textFrom);
-                    var tracking = {};
-                    Array.from(linear.querySelectorAll('Tracking')).forEach(function(node) {
-                        var eventName = node.getAttribute('event');
-                        tracking[eventName] = tracking[eventName] || [];
-                        tracking[eventName].push(textFrom(node));
-                    });
+            function finishAd() {
+                video.removeEventListener('timeupdate', onTimeUpdate);
+                video.removeEventListener('ended', finishAd);
+                video.removeEventListener('error', failAd);
+                fireEvent('complete');
+                playContent();
+            }
 
-                    var fired = {};
-                    function fireEvent(name) {
-                        if (!fired[name] && tracking[name]) {
-                            fired[name] = true;
-                            fireTracking(tracking[name]);
-                        }
-                    }
+            function failAd() {
+                video.removeEventListener('timeupdate', onTimeUpdate);
+                video.removeEventListener('ended', finishAd);
+                video.removeEventListener('error', failAd);
+                trackError(errorUrl, '405');
+                playContent();
+            }
 
-                    function onTimeUpdate() {
-                        var duration = video.duration || 0;
-                        var progress = duration ? video.currentTime / duration : 0;
-
-                        fireEvent('start');
-
-                        if (progress >= 0.25) {
-                            fireEvent('firstQuartile');
-                        }
-
-                        if (progress >= 0.5) {
-                            fireEvent('midpoint');
-                        }
-
-                        if (progress >= 0.75) {
-                            fireEvent('thirdQuartile');
-                        }
-                    }
-
-                    function finishAd() {
-                        video.removeEventListener('timeupdate', onTimeUpdate);
-                        video.removeEventListener('ended', finishAd);
-                        video.removeEventListener('error', failAd);
-                        fireEvent('complete');
-                        playContent();
-                    }
-
-                    function failAd() {
-                        video.removeEventListener('timeupdate', onTimeUpdate);
-                        video.removeEventListener('ended', finishAd);
-                        video.removeEventListener('error', failAd);
-                        trackError(errorUrl, '405');
-                        playContent();
-                    }
-
-                    fireTracking(impressionUrls);
-                    video.addEventListener('timeupdate', onTimeUpdate);
-                    video.addEventListener('ended', finishAd);
-                    video.addEventListener('error', failAd);
-                    video.addEventListener('loadedmetadata', autoplayVideo, { once: true });
-                    video.addEventListener('canplay', autoplayVideo, { once: true });
-                    video.src = adVideoUrl;
-                    video.load();
-                    autoplayVideo();
-                })
-                .catch(function() {
-                    playContent();
-                });
+            fireTracking(impressionUrls);
+            video.addEventListener('timeupdate', onTimeUpdate);
+            video.addEventListener('ended', finishAd);
+            video.addEventListener('error', failAd);
+            video.addEventListener('loadedmetadata', autoplayVideo, { once: true });
+            video.addEventListener('canplay', autoplayVideo, { once: true });
+            video.src = adVideoUrl;
+            video.load();
+            autoplayVideo();
         })();
     </script>
 
