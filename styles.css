@@ -158,6 +158,7 @@ body {
 }
 
 .video-player-wrap {
+    position: relative;
     width: min(100%, 900px);
     aspect-ratio: 16 / 9;
     margin: 0 auto;
@@ -177,6 +178,25 @@ body {
 .video-player-wrap video {
     display: block;
     object-fit: cover;
+}
+
+.video-ad-link {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 20;
+    padding: 8px 12px;
+    border: 1px solid #fff;
+    border-radius: 6px;
+    background: #171717;
+    color: #fff;
+    font-size: 14px;
+    text-decoration: none;
+}
+
+.video-ad-link:hover,
+.video-ad-link:focus-visible {
+    text-decoration: underline;
 }
 
 /* Info Section */

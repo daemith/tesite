@@ -439,6 +439,19 @@
                     }
 
                     var impressionUrls = Array.from(vastDoc.querySelectorAll('Impression')).map(textFrom);
+                    var clickThrough = textFrom(linear.querySelector('VideoClicks > ClickThrough'));
+                    var clickTracking = Array.from(linear.querySelectorAll('VideoClicks > ClickTracking')).map(textFrom);
+                    var adLink = document.createElement('a');
+                    adLink.href = clickThrough;
+                    adLink.target = '_blank';
+                    adLink.rel = 'noopener noreferrer';
+                    adLink.className = 'video-ad-link';
+                    adLink.textContent = 'Visit advertiser';
+                    adLink.addEventListener('click', function(event) {
+                        event.stopPropagation();
+                        fireTracking(clickTracking);
+                    });
+
                     var tracking = Object.create(null);
                     Array.from(linear.querySelectorAll('Tracking')).forEach(function(node) {
                         var eventName = node.getAttribute('event');
@@ -471,25 +484,30 @@
                         }
                     }
 
-                    function finishAd() {
+                    function cleanUpAd() {
+                        adLink.remove();
                         video.removeEventListener('playing', trackImpression);
                         video.removeEventListener('timeupdate', onTimeUpdate);
                         video.removeEventListener('ended', finishAd);
                         video.removeEventListener('error', failAd);
+                    }
+
+                    function finishAd() {
+                        cleanUpAd();
                         fireEvent('complete');
                         playContent();
                     }
 
                     function failAd() {
-                        video.removeEventListener('playing', trackImpression);
-                        video.removeEventListener('timeupdate', onTimeUpdate);
-                        video.removeEventListener('ended', finishAd);
-                        video.removeEventListener('error', failAd);
+                        cleanUpAd();
                         trackError(errorUrl, '405');
                         playContent();
                     }
 
                     function trackImpression() {
+                        if (/^https?:\/\//i.test(clickThrough) && /^https?:$/.test(adLink.protocol)) {
+                            video.parentElement.appendChild(adLink);
+                        }
                         fireTracking(impressionUrls);
                         fireEvent('start');
                     }
